@@ -19,8 +19,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     *Help Command:*
 /start - Start the bot
 /about - About the bot
-/ui_language - Set bot language
-/set_language - Select language to translate to
+/set_input_language - Select input language
+/set_output_language - Select output language
+/ui_language - Select interface language
 """
     await update.message.reply_text(help_text)
 
@@ -64,7 +65,7 @@ async def ui_language_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("You canceled interface language selection ❌")
 
 
-# /set_language
+# /input_language
 
 SELECTING_LANGUAGE = 1
 
@@ -92,7 +93,7 @@ LANGUAGES = {
     "ur": "🇵🇰 اردو (Urdu)"
 }
 
-async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def set_input_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🔍 Type language name to search:\n"
         "Examples: english, spanish, русский\n\n"
@@ -100,7 +101,7 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return SELECTING_LANGUAGE
 
-async def search_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def search_input_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query_text = update.message.text.lower()
 
     matches = []
@@ -132,49 +133,127 @@ async def search_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return SELECTING_LANGUAGE
 
-async def language_selected(update: Update, context: ContextTypes):
+async def input_language_selected(update: Update, context: ContextTypes):
     query = update.callback_query
     await query.answer()
 
     if query.data == "lang_cancel":
-        await query.edit_message_text("❌ Language selection cancelled")
+        await query.edit_message_text("❌ Input language selection cancelled")
         return ConversationHandler.END
     
     lang_code = query.data.replace("lang_", "")
     lang_name = LANGUAGES.get(lang_code, lang_code)
 
     await query.edit_message_text(
-        f"✅ Language selected: {lang_name}"
+        f"✅ Input language selected: {lang_name}"
     )
 
     return ConversationHandler.END
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def input_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Cancelled")
     return ConversationHandler.END
 
+# output_languege
 
+async def set_output_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("set output language command recieved")
+    await update.message.reply_text(
+        "🔍 Type language name to search:\n"
+        "Examples: english, spanish, русский\n\n"
+        "Or send /cancel to cancel"
+    )
+    return SELECTING_LANGUAGE
 
+async def search_output_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("searching languages")
+    query_text = update.message.text.lower()
+
+    matches = []
+    for code, name in LANGUAGES.items():
+        if query_text in name.lower():
+            matches.append((code, name))
+
+    if not matches:
+        await update.message.reply_text(
+            f"❌ No languages found for '{query_text}'\n"
+            "Try again or send /cancel"
+        )
+        return SELECTING_LANGUAGE
+    
+    keyboard = []
+    for code, name in matches[:10]:
+        keyboard.append([
+            InlineKeyboardButton(name, callback_data=f"lang_{code}")
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton("❌ Cancel", callback_data="lang_cancel")
+    ])
+
+    await update.message.reply_text(
+        f"Found {len(matches)} language(s):",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+    return SELECTING_LANGUAGE
+
+async def output_language_selected(update: Update, context: ContextTypes):
+    print("output language selected")
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "lang_cancel":
+        await query.edit_message_text("❌ Output language selection cancelled")
+        return ConversationHandler.END
+    
+    lang_code = query.data.replace("lang_", "")
+    lang_name = LANGUAGES.get(lang_code, lang_code)
+
+    await query.edit_message_text(
+        f"✅ Output language selected: {lang_name}"
+    )
+
+    return ConversationHandler.END
+
+async def output_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("output language canceled")
+    await update.message.reply_text("❌ Cancelled")
+    return ConversationHandler.END
 
 
 def main():
     print("Starting...")
     app = Application.builder().token(TOKEN).build()
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("set_language", set_language)],
+    #   /set_input_language
+    input_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("set_input_language", set_input_language)],
         states={
             SELECTING_LANGUAGE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, search_language),
-                CallbackQueryHandler(language_selected, pattern=r"^lang_")
+                MessageHandler(filters.TEXT & ~filters.COMMAND, search_input_language),
+                CallbackQueryHandler(input_language_selected, pattern=r"^lang_")
             ]
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler("cancel", input_cancel)]
     )
+    app.add_handler(input_conv_handler)
 
-    app.add_handler(conv_handler)
+    #      /set_output_language
+    output_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("set_output_language", set_output_language)],
+        states={
+            SELECTING_LANGUAGE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, search_output_language),
+                CallbackQueryHandler(output_language_selected, pattern=r"^lang_")
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", output_cancel)]
+    )
+    app.add_handler(output_conv_handler)
+
     app.add_handler(CommandHandler("ui_language", set_ui_language))
-    app.add_handler(CallbackQueryHandler(ui_language_callback))
+    app.add_handler(CallbackQueryHandler(ui_language_callback, pattern=r"^lang_(eng|rus|taj|turk)$"))
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
 
