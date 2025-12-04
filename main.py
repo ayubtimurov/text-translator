@@ -2,6 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler, ConversationHandler
 from dotenv import load_dotenv
 import os
+from translate import translate
 
 load_dotenv()
 
@@ -67,7 +68,8 @@ async def ui_language_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # /input_language
 
-SELECTING_LANGUAGE = 1
+SELECTING_INPUT_LANGUAGE = 1
+SELECTING_OUTPUT_LANGUAGE = 2
 
 LANGUAGES = {
     "tj": "🇹🇯 Тоҷикӣ (Tajik)",
@@ -99,7 +101,7 @@ async def set_input_language(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Examples: english, spanish, русский\n\n"
         "Or send /cancel to cancel"
     )
-    return SELECTING_LANGUAGE
+    return SELECTING_INPUT_LANGUAGE
 
 async def search_input_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query_text = update.message.text.lower()
@@ -114,7 +116,7 @@ async def search_input_language(update: Update, context: ContextTypes.DEFAULT_TY
             f"❌ No languages found for '{query_text}'\n"
             "Try again or send /cancel"
         )
-        return SELECTING_LANGUAGE
+        return SELECTING_OUTPUT_LANGUAGE
     
     keyboard = []
     for code, name in matches[:10]:
@@ -131,7 +133,7 @@ async def search_input_language(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    return SELECTING_LANGUAGE
+    return SELECTING_INPUT_LANGUAGE
 
 async def input_language_selected(update: Update, context: ContextTypes):
     query = update.callback_query
@@ -163,7 +165,7 @@ async def set_output_language(update: Update, context: ContextTypes.DEFAULT_TYPE
         "Examples: english, spanish, русский\n\n"
         "Or send /cancel to cancel"
     )
-    return SELECTING_LANGUAGE
+    return SELECTING_OUTPUT_LANGUAGE
 
 async def search_output_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("searching languages")
@@ -179,7 +181,7 @@ async def search_output_language(update: Update, context: ContextTypes.DEFAULT_T
             f"❌ No languages found for '{query_text}'\n"
             "Try again or send /cancel"
         )
-        return SELECTING_LANGUAGE
+        return SELECTING_OUTPUT_LANGUAGE
     
     keyboard = []
     for code, name in matches[:10]:
@@ -196,7 +198,7 @@ async def search_output_language(update: Update, context: ContextTypes.DEFAULT_T
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    return SELECTING_LANGUAGE
+    return SELECTING_OUTPUT_LANGUAGE
 
 async def output_language_selected(update: Update, context: ContextTypes):
     print("output language selected")
@@ -207,8 +209,11 @@ async def output_language_selected(update: Update, context: ContextTypes):
         await query.edit_message_text("❌ Output language selection cancelled")
         return ConversationHandler.END
     
+    print(lang_code)
     lang_code = query.data.replace("lang_", "")
     lang_name = LANGUAGES.get(lang_code, lang_code)
+
+    context.user_data['ouput_language'] = lang_code
 
     await query.edit_message_text(
         f"✅ Output language selected: {lang_name}"
@@ -220,6 +225,16 @@ async def output_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("output language canceled")
     await update.message.reply_text("❌ Cancelled")
     return ConversationHandler.END
+    
+# send translation (response)
+ 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text: str = update.message.text
+
+    output_lang = context.user_data.get('output_lang')
+    translated = translate(text, output_lang)
+
+    await update.message.reply_text(translated)
 
 
 def main():
@@ -230,7 +245,7 @@ def main():
     input_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("set_input_language", set_input_language)],
         states={
-            SELECTING_LANGUAGE: [
+            SELECTING_INPUT_LANGUAGE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, search_input_language),
                 CallbackQueryHandler(input_language_selected, pattern=r"^lang_")
             ]
@@ -243,7 +258,7 @@ def main():
     output_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("set_output_language", set_output_language)],
         states={
-            SELECTING_LANGUAGE: [
+            SELECTING_OUTPUT_LANGUAGE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, search_output_language),
                 CallbackQueryHandler(output_language_selected, pattern=r"^lang_")
             ]
@@ -252,10 +267,12 @@ def main():
     )
     app.add_handler(output_conv_handler)
 
+
     app.add_handler(CommandHandler("ui_language", set_ui_language))
     app.add_handler(CallbackQueryHandler(ui_language_callback, pattern=r"^lang_(eng|rus|taj|turk)$"))
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Polling...")
     app.run_polling()
