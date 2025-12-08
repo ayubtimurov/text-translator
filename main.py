@@ -1,8 +1,12 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler, ConversationHandler
+from telegram.warnings import PTBUserWarning
+import warnings
 from dotenv import load_dotenv
 import os
 from translate import translate
+
+warnings.filterwarnings("ignore", category=PTBUserWarning)
 
 load_dotenv()
 
@@ -209,11 +213,10 @@ async def output_language_selected(update: Update, context: ContextTypes):
         await query.edit_message_text("❌ Output language selection cancelled")
         return ConversationHandler.END
     
-    print(lang_code)
     lang_code = query.data.replace("lang_", "")
     lang_name = LANGUAGES.get(lang_code, lang_code)
 
-    context.user_data['ouput_language'] = lang_code
+    context.user_data['output_lang'] = lang_code
 
     await query.edit_message_text(
         f"✅ Output language selected: {lang_name}"
@@ -235,6 +238,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     translated = translate(text, output_lang)
 
     await update.message.reply_text(translated)
+
+async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"Update {update} caused error {context.error}")
 
 
 def main():
@@ -273,6 +279,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(error)
 
     print("Polling...")
     app.run_polling()
